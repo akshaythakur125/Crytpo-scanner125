@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-scanner.py
+scanner_github.py
 GitHub Actions friendly scanner:
 - scans CoinGecko ranks (default 40..100)
 - uses 1-hour timeframe (hourly OHLCV), RSI(14), simple divergence, ATR
