@@ -2,31 +2,56 @@ name: 3-hour Crypto Scanner
 
 on:
   schedule:
-    - cron: "0 */3 * * *"   # runs every 3 hours
-  workflow_dispatch:        # allows manual run from Actions tab
+    # runs every 3 hours
+    - cron: "0 */3 * * *"
+  workflow_dispatch:   # allows manual run from Actions UI
 
 jobs:
   run-scanner:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests pandas ta
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          else
+            # fallback install if no requirements.txt
+            pip install requests pandas python-dateutil
+          fi
 
-    - name: Run scanner
-      env:
-        EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        EMAIL_TO: ${{ secrets.EMAIL_TO }}
-      run: |
-        python scanner_github.py
+      - name: Run scanner (with retries & rate-limit)
+        # multiline bash script; make sure this file name matches your repo file
+        run: |
+          attempts=0
+          max_attempts=3
+          while [ $attempts -lt $max_attempts ]; do
+            attempts=$((attempts+1))
+            echo "Attempt $attempts / $max_attempts"
+            # run your script (change name if needed)
+            python scanner_github.py && break
+            rc=$?
+            echo "scanner_github.py exited with code $rc"
+            if [ $attempts -lt $max_attempts ]; then
+              sleep $((attempts * 10))
+            else
+              echo "All attempts failed"
+              exit $rc
+            fi
+          done
+        shell: bash
+
+      - name: Upload scan results
+        # non-deprecated upload action v4
+        uses: actions/upload-artifact@v4
+        with:
+          name: scan-results
+          path: results/*.csv
