@@ -2,8 +2,8 @@ name: 3-hour Crypto Scanner
 
 on:
   schedule:
-    - cron: "0 */3 * * *"   # every 3 hours
-  workflow_dispatch:        # manual run allowed
+    - cron: "0 */3 * * *"    # every 3 hours
+  workflow_dispatch:         # allows manual runs
 
 concurrency:
   group: crypto-scanner
@@ -13,8 +13,9 @@ jobs:
   run-scanner:
     runs-on: ubuntu-latest
     timeout-minutes: 30
+
     env:
-      # optional secrets (set these under repo Settings -> Secrets)
+      # set these in repo Settings -> Secrets -> Actions
       SMTP_USER: ${{ secrets.SMTP_USER }}
       SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
       EMAIL_RECIPIENT: ${{ secrets.EMAIL_RECIPIENT }}
@@ -38,17 +39,18 @@ jobs:
           if [ -f requirements.txt ]; then
             pip install -r requirements.txt
           else
-            # minimal fallback (adjust to your script's needs)
-            pip install requests pandas ccxt python-dotenv python-telegram-bot
+            # Minimal fallback - adjust to your script's needs
+            pip install requests pandas python-dotenv ccxt
           fi
 
-      - name: Debug: list files (confirm scanner exists)
+      - name: Debug: list repo (confirm script exists)
         run: |
           echo "WORKDIR: $(pwd)"
           ls -la
           echo "Repo root listing above. Ensure scanner_github.py is present at repo root."
 
       - name: Run scanner_github.py (with retries & backoff)
+        # use bash, multi-line script
         shell: bash
         run: |
           attempts=0
@@ -58,32 +60,28 @@ jobs:
             echo "Attempt $attempts / $max_attempts - running scanner_github.py"
             python scanner_github.py
             rc=$?
+            echo "scanner_github.py exited with code $rc"
             if [ $rc -eq 0 ]; then
               echo "scanner_github.py finished successfully"
               break
             fi
-            echo "scanner_github.py exited with code $rc"
             if [ $attempts -lt $max_attempts ]; then
+              # exponential backoff (10s, 20s, etc.)
               sleep_seconds=$((attempts * 10))
               echo "Sleeping $sleep_seconds seconds before retry..."
               sleep $sleep_seconds
             else
-              echo "All attempts failed — exiting with $rc"
+              echo "All attempts failed"
               exit $rc
             fi
           done
 
-      - name: Upload scan results (CSV/JSON) if any
-        if: always()
+      - name: Upload scan results (if any)
         uses: actions/upload-artifact@v4
         with:
           name: scan-results
-          path: |
-            results/*.csv
-            results/*.json
+          path: results/*.csv
 
-      - name: Show results dir (post-run)
+      - name: Post Set up Python (cleanup)
         if: always()
-        run: |
-          echo "Results dir contents (if created by script):"
-          ls -la results || echo "No results directory found"
+        run: echo "Workflow finished (success or failure). Check logs."
