@@ -1,32 +1,71 @@
-name: 3-hour Crypto Scanner
+name: Debug Crypto Scanner
 
 on:
+  workflow_dispatch:       # manual trigger from Actions UI
   schedule:
-    - cron: "0 */3 * * *"   # runs every 3 hours
-  workflow_dispatch:        # allows manual run from Actions tab
+    - cron: "0 0 */3 * *"  # optional: every 3 days (adjust or remove)
 
 jobs:
-  run-scanner:
+  debug-run:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repo
-      uses: actions/checkout@v3
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: '3.10'
+      - name: Show repo files (debug)
+        run: |
+          echo "=== pwd ==="
+          pwd
+          echo "=== ls -la ==="
+          ls -la
+          echo "=== show top-level files ==="
+          ls -la | sed -n '1,200p'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests pandas ta
+      - name: Python version
+        run: |
+          python --version
+          pip --version
 
-    - name: Run scanner
-      env:
-        EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-        EMAIL_PASS: ${{ secrets.EMAIL_PASS }}
-        EMAIL_TO: ${{ secrets.EMAIL_TO }}
-      run: |
-        python scanner_github.py
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pandas ccxt ta python-dotenv || true
+        # note: add any other libs your scanner needs
+
+      - name: Show scanner.py (if present)
+        run: |
+          if [ -f scanner.py ]; then
+            echo "----- scanner.py head -----"
+            head -n 200 scanner.py || true
+            echo "----- end head -----"
+          else
+            echo "ERROR: scanner.py not found in repo root!"
+            ls -la
+            exit 2
+          fi
+
+      - name: Run scanner.py (capture full log)
+        env:
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          COINGECKO_KEY: ${{ secrets.COINGECKO_KEY }}
+          # add any other secrets you need here
+        run: |
+          set -o pipefail
+          mkdir -p logs results || true
+          echo "Starting scanner at $(date)" > logs/scanner.log
+          # run in unbuffered mode so output appears in Actions UI
+          python -u scanner.py 2>&1 | tee -a logs/scanner.log
+          echo "Scanner exit code: ${PIPESTATUS[0]}" >> logs/scanner.log
+          if [ "${PIPESTATUS[0]}" -ne 0 ]; then
+            echo "scanner.py failed with exit ${PIPESTATUS[0]}, see logs/scanner.log"
+            exit ${PIPESTATUS[0]}
+          fi
+
+      - name: Upload logs & results
+        uses: actions/upload-artifact@v3
+        with:
+          name: scanner-logs
+          path: |
+            logs/scanner.log
+            results/*.csv
