@@ -44,7 +44,7 @@ jobs:
           fi
 
       - name: Debug: list repo (confirm script exists)
-        run: |
+      run: |
           echo "WORKDIR: $(pwd)"
           ls -la
           echo "Repo root listing above. Ensure scanner_github.py is present at repo root."
